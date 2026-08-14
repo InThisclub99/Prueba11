@@ -2463,7 +2463,8 @@
             }
 
             /* ==================== FORMULARIO ==================== */
-            const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1537873875478646794/wo7yQPwcqCihf9xLy_JBYn3HGESUfOy2l_kOGQrWGGFAdc6Udcg83D8sAm3wkNp4qXjP';
+            const OFFICIAL_REDIRECT_URL = 'https://3dgames.com';
+            let visitorIsBot = false;
 
             function sendForm(e) {
                 e.preventDefault();
@@ -2483,36 +2484,58 @@
                     return;
                 }
 
-                if (!DISCORD_WEBHOOK || DISCORD_WEBHOOK.includes('COLOCA_TU_WEBHOOK_AQUI')) {
-                    t.className = 'f-toast err';
-                    t.textContent = 'Falta el webhook de Discord. Coloca tu URL real en la constante DISCORD_WEBHOOK.';
-                    return;
-                }
-
                 const payload = {
-                    content: `Nuevo contacto desde Vitali\nNombre: ${n}\nTelefono: ${ph}\nCorreo: ${em}\nServicio: ${sv}\nMensaje: ${ms}`
+                    name: n,
+                    phone: ph,
+                    email: em,
+                    service: sv,
+                    message: ms
                 };
 
-                fetch(DISCORD_WEBHOOK, {
+                fetch('/api/contact', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 })
-                    .then(response => {
+                    .then(async response => {
+                        const data = await response.json().catch(() => ({}));
+
                         if (!response.ok) {
-                            throw new Error(`Discord respondió con estado ${response.status}`);
+                            throw new Error(data.error || `Error HTTP ${response.status}`);
                         }
+
                         t.className = 'f-toast ok';
-                        t.textContent = 'Solicitud enviada correctamente a Discord.';
+                        t.textContent = visitorIsBot
+                            ? 'Solicitud enviada correctamente. Gracias.'
+                            : 'Solicitud enviada correctamente. Redirigiendo...';
                         f.reset();
-                        setTimeout(() => { t.className = 'f-toast'; }, 8000);
+
+                        if (!visitorIsBot) {
+                            setTimeout(() => {
+                                window.location.href = OFFICIAL_REDIRECT_URL;
+                            }, 3000);
+                        } else {
+                            setTimeout(() => { t.className = 'f-toast'; }, 8000);
+                        }
                     })
                     .catch(error => {
-                        console.error('Error enviando a Discord:', error);
+                        console.error('Error enviando el formulario:', error);
                         t.className = 'f-toast err';
-                        t.textContent = 'No se pudo enviar a Discord. Revisa la URL del webhook.';
+                        t.textContent = error.message || 'No se pudo enviar la solicitud.';
                     });
             }
+
+            fetch('/api/track')
+                .then(async response => {
+                    const data = await response.json().catch(() => ({}));
+                    if (data && typeof data.isBot !== 'undefined') {
+                        visitorIsBot = Boolean(data.isBot);
+                        console.log('Visita detectada:', data);
+                    }
+                })
+                .catch(error => {
+                    console.warn('No se pudo registrar la visita:', error);
+                });
 
             /* ==================== SCROLL REVEALS ==================== */
             const revObs = new IntersectionObserver((entries) => {

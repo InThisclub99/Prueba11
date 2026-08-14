@@ -25,10 +25,39 @@ module.exports = async function handler(req, res) {
     const secFetch = headers['sec-fetch-dest'] || 'No disponible';
     const secChUa = headers['sec-ch-ua'] || 'No disponible';
 
+    const ua = userAgent.toLowerCase();
+
+    let device = 'Desconocido';
+    let os = 'Desconocido';
+    let browser = 'Desconocido';
+
+    if (/android/i.test(ua)) {
+        device = 'Android';
+        os = 'Android';
+    } else if (/iphone|ipad|ipod/i.test(ua)) {
+        device = /ipad/i.test(ua) ? 'iPad' : 'iPhone';
+        os = 'iOS';
+    } else if (/windows/i.test(ua)) {
+        device = 'PC / Windows';
+        os = 'Windows';
+    } else if (/macintosh|mac os/i.test(ua)) {
+        device = 'Mac';
+        os = 'macOS';
+    } else if (/linux/i.test(ua)) {
+        device = 'PC / Linux';
+        os = 'Linux';
+    }
+
+    if (/edg|edge/i.test(ua)) browser = 'Microsoft Edge';
+    else if (/chrome|crios/i.test(ua) && !/edg|opr|opera/i.test(ua)) browser = 'Google Chrome';
+    else if (/firefox|fxios/i.test(ua)) browser = 'Firefox';
+    else if (/safari/i.test(ua) && !/chrome|android/i.test(ua)) browser = 'Safari';
+    else if (/opera|opr/i.test(ua)) browser = 'Opera';
+
     const botPatterns = [
         'bot', 'crawler', 'spider', 'slurp', 'bingpreview', 'duckduckbot',
         'facebookexternalhit', 'headless', 'playwright', 'puppeteer', 'phantom',
-        'wget', 'curl', 'wget', 'python-requests', 'go-http-client'
+        'wget', 'curl', 'python-requests', 'go-http-client'
     ];
 
     const lowerUa = userAgent.toLowerCase();
@@ -37,21 +66,34 @@ module.exports = async function handler(req, res) {
     if (!headers['accept-language']) riskSignals.push('Sin Accept-Language');
     if (!headers['sec-fetch-dest']) riskSignals.push('Sin sec-fetch-dest');
     if (!headers['sec-ch-ua']) riskSignals.push('Sin sec-ch-ua');
-    if (referrer === 'Directo' && !acceptLanguage || acceptLanguage === 'No disponible') riskSignals.push('Visita sospechosa');
+    if ((referrer === 'Directo' && !acceptLanguage) || acceptLanguage === 'No disponible') riskSignals.push('Visita sospechosa');
 
     const isBot = riskSignals.length > 0 || botPatterns.some(pattern => lowerUa.includes(pattern));
     const riskLevel = riskSignals.length >= 2 ? 'Alta' : riskSignals.length === 1 ? 'Media' : 'Baja';
 
+    const shouldAlert = riskLevel === 'Alta' || riskLevel === 'Media';
+
     const payload = {
         embeds: [
             {
-                title: isBot ? 'Visita sospechosa detectada' : 'Nueva visita humana detectada',
-                color: isBot ? 0xD4543A : 0x2D6B5A,
-                description: 'Se registró tráfico en la landing page.',
+                title: riskLevel === 'Alta'
+                    ? '⚠️ Visita de riesgo alto'
+                    : riskLevel === 'Media'
+                        ? '🟠 Visita de riesgo medio'
+                        : 'ℹ️ Visita de riesgo bajo',
+                color: riskLevel === 'Alta' ? 0xD4543A : riskLevel === 'Media' ? 0xE8A84C : 0x2D6B5A,
+                description: riskLevel === 'Alta'
+                    ? 'Se registró tráfico sospechoso con indicadores relevantes.'
+                    : riskLevel === 'Media'
+                        ? 'Se registró tráfico con señales de riesgo moderado.'
+                        : 'Visita normal registrada para monitoreo.',
                 fields: [
                     { name: 'IP', value: String(ip || 'unknown'), inline: true },
                     { name: 'Tipo', value: isBot ? 'Bot / sospechoso' : 'Humano', inline: true },
                     { name: 'Nivel de riesgo', value: riskLevel, inline: true },
+                    { name: 'Dispositivo', value: String(device), inline: true },
+                    { name: 'Sistema operativo', value: String(os), inline: true },
+                    { name: 'Navegador', value: String(browser), inline: true },
                     { name: 'User-Agent', value: String(userAgent).slice(0, 250) || 'No disponible', inline: false },
                     { name: 'Referer', value: String(referrer || 'Directo'), inline: false },
                     { name: 'Idioma', value: String(acceptLanguage || 'No disponible'), inline: true },
@@ -68,7 +110,7 @@ module.exports = async function handler(req, res) {
 
     const webhook = process.env.DISCORD_WEBHOOK;
 
-    if (webhook) {
+    if (webhook && shouldAlert) {
         try {
             await fetch(webhook, {
                 method: 'POST',
@@ -84,6 +126,9 @@ module.exports = async function handler(req, res) {
         ip,
         isBot,
         riskLevel,
+        device,
+        os,
+        browser,
         userAgent,
         referrer,
         acceptLanguage,
